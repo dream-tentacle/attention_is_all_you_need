@@ -27,7 +27,9 @@ def scaled_dot_product_attention(Q: Tensor, K: Tensor, V: Tensor) -> Tensor:
         softmax(Q*K.T/sqrt(d_k))*V
         Tensor: [B,d_v] or [d_v]
     """
-    weights = torch.nn.functional.softmax(matrix_multi(Q, K.T), dim=-2)  # [B,L,L]
+    weights = torch.nn.functional.softmax(
+        matrix_multi(Q, K.transpose(-1, -2)), dim=-2
+    )  # [B,L,L]
     attention = matrix_multi(weights, V)  # [B,L,d_v]
     return attention
 
@@ -53,23 +55,22 @@ def multi_head_attention(
         WQ (list[nn.Linear]): [h*d_k,d_model]
         WK (list[nn.Linear]): [h*d_k,d_model]
         WV (list[nn.Linear]): [h*d_v,d_model]
-        h (int): the head number, d_v * h = d_model
+        h (int): the head number, d_k * h = d_model
     Returns:
         Tensor: [B,L,d_model]
     """
     Q2 = WQ(Q)  # [B,L,d_model]
     K2 = WK(K)
     V2 = WV(V)
+    d_k = int(Q.shape[-1] / h)
 
     def head(i):
         return scaled_dot_product_attention(
-            Q2[..., i * h : (i + 1) * h, :],  # [B,L,d_k]
-            K2[..., i * h : (i + 1) * h, :],  # [B,L,d_k]
-            V2[..., i * h : (i + 1) * h, :],  # [B,L,d_v]
-        )  # [B,d_v]
+            Q2[..., i * d_k : (i + 1) * d_k],  # [B,L,d_k]
+            K2[..., i * d_k : (i + 1) * d_k],  # [B,L,d_k]
+            V2[..., i * d_k : (i + 1) * d_k],  # [B,L,d_k]
+        )  # [B,L,d_v]
 
-    all_heads = torch.concat([head(i) for i in range(h)], dim=-1).unsqueeze(
-        dim=1
-    )  # [,1,h*d_v]
+    all_heads = torch.concat([head(i) for i in range(h)], dim=-1)  # [B,L,h*d_v]
     multi_head = WO(all_heads)  # [B,L,d_model]
     return multi_head  # [B,L,d_model]

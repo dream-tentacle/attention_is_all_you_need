@@ -6,8 +6,8 @@ from torch import Tensor
 class feed_forward_network(nn.Module):
     def __init__(self, d_model) -> None:
         super().__init__()
-        self.W1 = nn.Linear(d_model, d_model)
-        self.W2 = nn.Linear(d_model, d_model)
+        self.W_1 = nn.Linear(d_model, d_model)
+        self.W_2 = nn.Linear(d_model, d_model)
 
     def forward(self, x) -> Tensor:
         """compute feed forward function
