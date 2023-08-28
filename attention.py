@@ -1,76 +1,52 @@
 import torch
-from torch import Tensor
 import torch.nn as nn
+import torch.nn.functional as F
+from utils import *
 
 
-def matrix_multi(X: Tensor, Y: Tensor):
-    if X.dim() == 3:
-        return torch.bmm(X, Y)
-    elif X.dim() == 2:
-        return torch.matmul(X, Y)
-    print(f"wrong dimension input in multiply : {X.shape} with {Y.shape}")
-    return None
+def multy(X: torch.Tensor, Y: torch.Tensor):
+    if len(X.shape.tolist()) == 2:
+        return X.matmul(Y)
+    return X.bmm(Y)
 
 
-def scaled_dot_product_attention(Q: Tensor, K: Tensor, V: Tensor) -> Tensor:
-    """
-    B = batch size
-    L = sequence length
-    d_k, d_v as the paper shows
-
-    Args:
-        Q (Tensor): [B,L,d_k] or [L,d_k]
-        K (Tensor): [B,L,d_k] or [L,d_k]
-        V (Tensor): [B,L,d_v] or [L,d_v]
-
-    Returns:
-        softmax(Q*K.T/sqrt(d_k))*V
-        Tensor: [B,d_v] or [d_v]
-    """
-    weights = torch.nn.functional.softmax(
-        matrix_multi(Q, K.transpose(-1, -2)), dim=-2
-    )  # [B,L,L]
-    attention = matrix_multi(weights, V)  # [B,L,d_v]
-    return attention
+def attention(K, Q, V, mask=None):
+    weights = multy(K, Q.transpose(-1, -2))
+    if mask is not None:
+        weights = weights.masked_fill(mask=mask, value=1e-6)
+    weights = F.softmax(weights, dim=-1) / (K.shape[-1] ** 0.5)
+    return multy(weights, V)
 
 
-def multi_head_attention(
-    Q: Tensor,
-    K: Tensor,
-    V: Tensor,
-    WO: nn.Linear,
-    WQ: nn.Linear,
-    WK: nn.Linear,
-    WV: nn.Linear,
-    h: int,
-) -> Tensor:
-    """
-    WQ is the list of W_i^Q, WK and WV the same.
+class MultiheadAttention(nn.Module):
+    def __init__(self, d_model, head) -> None:
+        super().__init__()
+        self.linears = clone(nn.Linear(d_model, d_model, bias=False), 4)
+        self.head = head
+        self.d_model = d_model
 
-    Args:
-        Q (Tensor): [B,L,d_model] or [L,d_model]
-        K (Tensor): [B,L,d_model] or [L,d_model]
-        V (Tensor): [B,L,d_model] or [L,d_model]
-        WO (nn.Linear): [h*d_v,d_model]
-        WQ (list[nn.Linear]): [h*d_k,d_model]
-        WK (list[nn.Linear]): [h*d_k,d_model]
-        WV (list[nn.Linear]): [h*d_v,d_model]
-        h (int): the head number, d_k * h = d_model
-    Returns:
-        Tensor: [B,L,d_model]
-    """
-    Q2 = WQ(Q)  # [B,L,d_model]
-    K2 = WK(K)
-    V2 = WV(V)
-    d_k = int(Q.shape[-1] / h)
+    def forward(self, k, q, v, mask=None):
+        """
+        Args:
+            k: [B,L,d_model]
+            q: [B,L,d_model]
+            v: [B,L,d_model]
+            mask (optional): [B,L,L]. Defaults to None.
+        Returns:
+            Tensor: [B,L,d_model]
+        """
+        k = self.linears[0](k)
+        q = self.linears[1](q)
+        v = self.linears[2](v)
+        length = self.d_model / self.head
 
-    def head(i):
-        return scaled_dot_product_attention(
-            Q2[..., i * d_k : (i + 1) * d_k],  # [B,L,d_k]
-            K2[..., i * d_k : (i + 1) * d_k],  # [B,L,d_k]
-            V2[..., i * d_k : (i + 1) * d_k],  # [B,L,d_k]
-        )  # [B,L,d_v]
+        def calcu_head(i):
+            return attention(
+                k[..., i * length : (i + 1) * length],
+                q[..., i * length : (i + 1) * length],
+                v[..., i * length : (i + 1) * length],
+                mask=mask,
+            )
 
-    all_heads = torch.concat([head(i) for i in range(h)], dim=-1)  # [B,L,h*d_v]
-    multi_head = WO(all_heads)  # [B,L,d_model]
-    return multi_head  # [B,L,d_model]
+        att = torch.concat([calcu_head(i) for i in range(self.head)], dim=-1)
+        return self.linears[3](att)
