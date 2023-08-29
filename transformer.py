@@ -42,8 +42,10 @@ class Transformer(nn.Module):
         """
         src = self.enc_embed(src) + torch.stack(
             [PE(pos, self.d_model) for pos in range(src.shape[-1])]
-        )
+        ).to(src.device)
         tgt = self.dec_embed(tgt) + torch.stack(
             [PE(pos, self.d_model) for pos in range(tgt.shape[-1])]
-        )
-        return self.encdec(src, tgt, src_mask, tgt_mask)
+        ).to(tgt.device)
+        output = self.encdec(src, tgt, src_mask, tgt_mask)
+        output = self.fc(output)
+        return output

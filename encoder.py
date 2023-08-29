@@ -13,8 +13,8 @@ class EncoderLayer(nn.Module):
         self.head = head
         self.attn = MultiheadAttention(d_model, head)
         self.ffn = FFN(d_model, hidden=hidden_size)
-        self.norm1 = nn.LayerNorm([d_model, d_model])
-        self.norm2 = nn.LayerNorm([d_model, d_model])
+        self.norm1 = nn.LayerNorm([d_model])
+        self.norm2 = nn.LayerNorm([d_model])
 
     def forward(self, x, mask):
         x = self.norm1(self.attn(x, x, x, mask) + x)
@@ -29,5 +29,6 @@ class Encoder(nn.Module):
 
     def forward(self, x, mask):
         for i in range(len(self.encoders)):
+            # print(x.device)
             x = self.encoders[i](x, mask)
         return x

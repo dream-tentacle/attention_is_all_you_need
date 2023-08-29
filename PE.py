@@ -3,6 +3,7 @@ import math
 
 
 def PE(pos, embedding_dim):
+    # possition encoding
     re = torch.zeros(embedding_dim)
     for i in range(embedding_dim):
         if i % 2 == 0:

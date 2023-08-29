@@ -5,15 +5,15 @@ from utils import *
 
 
 def multy(X: torch.Tensor, Y: torch.Tensor):
-    if len(X.shape.tolist()) == 2:
+    if len(X.shape) == 2:
         return X.matmul(Y)
     return X.bmm(Y)
 
 
 def attention(K, Q, V, mask=None):
-    weights = multy(K, Q.transpose(-1, -2))
+    weights = multy(Q, K.transpose(-1, -2))
     if mask is not None:
-        weights = weights.masked_fill(mask=mask, value=1e-6)
+        weights = weights.masked_fill(mask=mask, value=-1e9)
     weights = F.softmax(weights, dim=-1) / (K.shape[-1] ** 0.5)
     return multy(weights, V)
 
@@ -25,11 +25,11 @@ class MultiheadAttention(nn.Module):
         self.head = head
         self.d_model = d_model
 
-    def forward(self, k, q, v, mask=None):
+    def forward(self, q, k, v, mask=None):
         """
         Args:
-            k: [B,L,d_model]
             q: [B,L,d_model]
+            k: [B,L,d_model]
             v: [B,L,d_model]
             mask (optional): [B,L,L]. Defaults to None.
         Returns:
@@ -38,7 +38,7 @@ class MultiheadAttention(nn.Module):
         k = self.linears[0](k)
         q = self.linears[1](q)
         v = self.linears[2](v)
-        length = self.d_model / self.head
+        length = int(self.d_model / self.head)
 
         def calcu_head(i):
             return attention(
