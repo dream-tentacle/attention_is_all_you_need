@@ -19,11 +19,12 @@ def attention(K, Q, V, mask=None):
 
 
 class MultiheadAttention(nn.Module):
-    def __init__(self, d_model, head) -> None:
+    def __init__(self, d_model, head, dropout=0.1) -> None:
         super().__init__()
         self.linears = clone(nn.Linear(d_model, d_model, bias=False), 4)
         self.head = head
         self.d_model = d_model
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, q, k, v, mask=None):
         """
@@ -49,4 +50,4 @@ class MultiheadAttention(nn.Module):
             )
 
         att = torch.concat([calcu_head(i) for i in range(self.head)], dim=-1)
-        return self.linears[3](att)
+        return self.dropout(self.linears[3](att))

@@ -79,7 +79,7 @@ def collate_fn(data):
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 dataset = myDataset(20000, 20)
-dataloader = DataLoader(dataset, batch_size=128, shuffle=True, collate_fn=collate_fn)
+dataloader = DataLoader(dataset, batch_size=256, shuffle=True, collate_fn=collate_fn)
 
 model = MyModel(6, len(word2num), 128, 8, 256)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
@@ -125,8 +125,15 @@ def train(it):
         total = (tgt != 0).sum()
         correct = (output == tgt).sum() - (tgt == 0).sum()
         acc = correct / total
+        total_number = tgt.shape[0]
+        correct_number = [
+            1 if tgt[j].equal(output[j]) else 0 for j in range(total_number)
+        ]
+        correct_number = sum(correct_number)
+        acc_number = correct_number / total_number
         pbar.set_description(
-            "iter: %d, loss: %.4f, acc: %.4f" % (it, loss.item(), acc)
+            "iter: %d, loss: %.4f, acc: %.4f, acc_number: %.4f"
+            % (it, loss.item(), acc.item(), acc_number)
         )  # 更新进度条
 
     torch.save(model.state_dict(), "model.pth")
@@ -144,7 +151,7 @@ def train(it):
     print(x, y, predict)
 
 
-def test(a, b):
+def test(a, b, to_print=False):
     model.to("cpu")
     model.load_state_dict(torch.load("model.pth"))
     model.eval()
@@ -156,27 +163,37 @@ def test(a, b):
     src_mask = None
     tgt_mask = None
     cnt = 0
-    while (len(y) == 0 or y[-1] != 13) and cnt < 100:
+    while (len(y) == 0 or y[-1] != word2num[">"]) and cnt < 100:
         cnt += 1
         output = model(
             x, torch.tensor(y, dtype=torch.int).unsqueeze(0), src_mask, tgt_mask
         )
         output = output.argmax(dim=-1)
-        print("".join([dic.rev_dic[i.item()] for i in output[0]]))
         y.append(output[0, -1].item())
+    y = "".join([dic.rev_dic[i] for i in y[1:-1]])
+    real_ans = str(int(a) + int(b))
+    if to_print:
+        print(y)
+        print(real_ans)
+    if y == real_ans:
+        return True
 
 
-# model.load_state_dict(torch.load("model.pth"))
+model.load_state_dict(torch.load("model.pth"))
 for i in range(100):
     train(i)
 
-exit()
-x, y, len_x, len_y = next(iter(dataloader))
-print(x.shape)
-x = x[0].tolist()
-x = [dic.rev_dic[i] for i in x]
-x = "".join(x)
-a, b = x.split("+")
-b, c = b.split("=")
-print(a, b, c)
-test(a, b)
+# 测试
+total = 0
+correct = 0
+pbar = tqdm.tqdm(enumerate(dataloader), total=len(dataloader))  # 进度条
+for i, (x, y, len_x, len_y) in pbar:
+    x = x[0].tolist()
+    x = [dic.rev_dic[i] for i in x]
+    x = "".join(x)
+    a, b = x.split("+")
+    b, c = b.split("=")
+    total += 1
+    correct += 1 if test(a, b) else 0
+    pbar.set_description("acc: %.4f" % (correct / total))  # 更新进度条
+print(correct / total)
