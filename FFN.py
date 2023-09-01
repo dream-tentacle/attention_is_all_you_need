@@ -4,7 +4,7 @@ from torch import Tensor
 
 
 class FFN(nn.Module):
-    def __init__(self, d_model, hidden, dropout=0.1) -> None:
+    def __init__(self, d_model, hidden, dropout=0.5) -> None:
         super().__init__()
         self.W_1 = nn.Linear(d_model, hidden)
         self.W_2 = nn.Linear(hidden, d_model)

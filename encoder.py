@@ -7,12 +7,12 @@ from FFN import FFN
 
 
 class EncoderLayer(nn.Module):
-    def __init__(self, d_model, head, hidden_size) -> None:
+    def __init__(self, d_model, head, hidden_size, dropout=0.5) -> None:
         super().__init__()
         self.d_model = d_model
         self.head = head
-        self.attn = MultiheadAttention(d_model, head)
-        self.ffn = FFN(d_model, hidden=hidden_size)
+        self.attn = MultiheadAttention(d_model, head, dropout)
+        self.ffn = FFN(d_model, hidden=hidden_size, dropout=dropout)
         self.norm1 = nn.LayerNorm([d_model])
         self.norm2 = nn.LayerNorm([d_model])
 
@@ -23,9 +23,11 @@ class EncoderLayer(nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(self, layer_num, d_model, head, hidden_size) -> None:
+    def __init__(self, layer_num, d_model, head, hidden_size, dropout=0.5) -> None:
         super().__init__()
-        self.encoders = clone(EncoderLayer(d_model, head, hidden_size), layer_num)
+        self.encoders = clone(
+            EncoderLayer(d_model, head, hidden_size, dropout), layer_num
+        )
 
     def forward(self, x, mask):
         for i in range(len(self.encoders)):

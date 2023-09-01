@@ -8,10 +8,11 @@ from decoder import Decoder
 
 
 class EncoderDecoder(nn.Module):
-    def __init__(self, layer_num, d_model, head, hidden_size) -> None:
+    # only contains encoder and decoder
+    def __init__(self, layer_num, d_model, head, hidden_size, dropout=0.5) -> None:
         super().__init__()
-        self.encoder = Encoder(layer_num, d_model, head, hidden_size)
-        self.decoder = Decoder(layer_num, d_model, head, hidden_size)
+        self.encoder = Encoder(layer_num, d_model, head, hidden_size, dropout)
+        self.decoder = Decoder(layer_num, d_model, head, hidden_size, dropout)
 
     def forward(self, src, tgt, src_mask, tgt_mask):
         enc_memory = self.encoder(src, src_mask)
@@ -20,12 +21,14 @@ class EncoderDecoder(nn.Module):
 
 
 class Transformer(nn.Module):
-    def __init__(self, layer_num, d_model, head, hidden_size, vocab) -> None:
+    def __init__(
+        self, layer_num, d_model, head, hidden_size, vocab, dropout=0.5
+    ) -> None:
         super().__init__()
         self.d_model = d_model
         self.enc_embed = nn.Embedding(vocab, d_model)
         self.dec_embed = nn.Embedding(vocab, d_model)
-        self.encdec = EncoderDecoder(layer_num, d_model, head, hidden_size)
+        self.encdec = EncoderDecoder(layer_num, d_model, head, hidden_size, dropout)
         self.fc = nn.Sequential(
             nn.Linear(d_model, hidden_size), nn.ReLU(), nn.Linear(hidden_size, vocab)
         )

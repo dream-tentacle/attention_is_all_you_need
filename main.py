@@ -1,3 +1,14 @@
+"""
+A transformer model for computing adding problem
+input: string "a+b=", such as "10+32="
+output: string "c", such as "42"
+
+The model is trained by teacher forcing, and tested by greedy search.
+
+I have to admit that repeating the src_mask is kind of ugly because I 
+need to make it match the shape of the mask in attention function.
+"""
+
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
@@ -15,11 +26,13 @@ class dictionary:
 
 
 class MyModel(nn.Module):
-    def __init__(self, layer_num, vocab_size, embed_dim, head, hidden_size) -> None:
+    def __init__(
+        self, layer_num, vocab_size, embed_dim, head, hidden_size, dropout=0.5
+    ) -> None:
         super().__init__()
         self.head = head
         self.transformer = Transformer(
-            layer_num, embed_dim, head, hidden_size, vocab_size
+            layer_num, embed_dim, head, hidden_size, vocab_size, dropout
         )
 
     def forward(self, src, tgt, src_mask, tgt_mask):
@@ -38,8 +51,8 @@ class myDataset(Dataset):
     def __getitem__(self, index):
         a = random.randint(1, self.max_num)
         b = random.randint(1, self.max_num)
-        a = random.randint(0, int(pow(10, a)))
-        b = random.randint(0, int(pow(10, b)))
+        a = random.randint(int(pow(10, a - 1)), int(pow(10, a)))
+        b = random.randint(int(pow(10, b - 1)), int(pow(10, b)))
         return str(a) + "+" + str(b) + "=", "<" + str(a + b) + ">"  # 方便后面只在答案里预测
 
 
@@ -79,9 +92,10 @@ def collate_fn(data):
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 dataset = myDataset(20000, 20)
-dataloader = DataLoader(dataset, batch_size=256, shuffle=True, collate_fn=collate_fn)
+dataloader = DataLoader(dataset, batch_size=128, shuffle=True, collate_fn=collate_fn)
 
-model = MyModel(6, len(word2num), 128, 8, 256)
+model = MyModel(3, len(word2num), 128, 8, 256, 0)
+model.to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 loss_fn = nn.CrossEntropyLoss()
 
@@ -95,8 +109,9 @@ def originate(m):
 model.apply(originate)
 
 
-def train(it):
+def train(it, savename):
     model.to(device)
+    model.train()
     pbar = tqdm.tqdm(enumerate(dataloader), total=len(dataloader))  # 进度条
     for i, (src, tgt, len_x, len_y) in pbar:
         optimizer.zero_grad()
@@ -104,9 +119,7 @@ def train(it):
         tgt_mask = torch.triu(
             torch.ones(tgt.shape[-1] - 1, tgt.shape[-1] - 1), diagonal=1
         )  # 生成上三角矩阵, 用于屏蔽未来的信息
-        tgt_mask = tgt_mask.unsqueeze(0).repeat(
-            tgt.shape[0], 1, 1
-        )  # [B,tgt_len-1,tgt_len-1]
+        tgt_mask = tgt_mask.unsqueeze(0).repeat(tgt.shape[0], 1, 1)
         # 将mask转换为bool类型
         tgt_mask = tgt_mask.type(torch.bool)
         src_mask = src_mask.type(torch.bool)
@@ -123,7 +136,7 @@ def train(it):
         # 计算准确率
         output = output.argmax(dim=-1)
         total = (tgt != 0).sum()
-        correct = (output == tgt).sum() - (tgt == 0).sum()
+        correct = ((tgt == output) & (tgt != 0)).sum()
         acc = correct / total
         total_number = tgt.shape[0]
         correct_number = [
@@ -136,8 +149,8 @@ def train(it):
             % (it, loss.item(), acc.item(), acc_number)
         )  # 更新进度条
 
-    torch.save(model.state_dict(), "model.pth")
-
+    torch.save(model.state_dict(), savename)
+    # torch.save(optimizer.state_dict(), "optimizer.pth")
     # 测试
     x = src[0].tolist()
     predict = output[0].tolist()
@@ -151,49 +164,46 @@ def train(it):
     print(x, y, predict)
 
 
-def test(a, b, to_print=False):
+def test():
     model.to("cpu")
-    model.load_state_dict(torch.load("model.pth"))
-    model.eval()
-    x = str(a) + "+" + str(b) + "="
-    x = [word2num[i] for i in x]
-    x = torch.tensor(x).unsqueeze(0)
-    y = ["<"]
-    y = [word2num[i] for i in y]
-    src_mask = None
-    tgt_mask = None
-    cnt = 0
-    while (len(y) == 0 or y[-1] != word2num[">"]) and cnt < 100:
-        cnt += 1
-        output = model(
-            x, torch.tensor(y, dtype=torch.int).unsqueeze(0), src_mask, tgt_mask
-        )
-        output = output.argmax(dim=-1)
-        y.append(output[0, -1].item())
-    y = "".join([dic.rev_dic[i] for i in y[1:-1]])
-    real_ans = str(int(a) + int(b))
-    if to_print:
-        print(y)
-        print(real_ans)
-    if y == real_ans:
-        return True
+    # model.eval()
+    total = 0
+    correct = 0
+    pbar = tqdm.tqdm(enumerate(dataloader), total=len(dataloader))
+    for i, (x, y, len_x, len_y) in pbar:
+        x = x[0:1]
+        y = y[0:1]
+        len_x = len_x[0:1]
+        len_y = len_y[0:1]
+        src_mask = len_x
+        predict = [dic.dic["<"]]
+        for i in range(100):
+            tgt = torch.tensor(predict).unsqueeze(0)
+            tgt_mask = torch.triu(torch.ones(tgt.shape[-1], tgt.shape[-1]), diagonal=1)
+            tgt_mask = tgt_mask.unsqueeze(0).repeat(tgt.shape[0], 1, 1)
+            tgt_mask = tgt_mask.type(torch.bool)
+            src_mask = src_mask.type(torch.bool)
+            output = model(x, tgt, src_mask, tgt_mask)
+            output = output.argmax(dim=-1)
+            predict.append(output[0][-1].item())
+            if output[0][-1].item() == dic.dic[">"]:
+                break
+        y = y[0].tolist()
+        y = [dic.rev_dic[i] for i in y]
+        y = "".join(y)
+        predict = [dic.rev_dic[i] for i in predict]
+        predict = "".join(predict)
+        y = y.split(">")[0]
+        predict = predict.split(">")[0]
+        if y == predict:
+            correct += 1
+        total += 1
+        pbar.set_description("acc: %.4f" % (correct / total))
+    print(correct / total)
 
 
-model.load_state_dict(torch.load("model.pth"))
+# optimizer.load_state_dict(torch.load("optimizer.pth"))
+model.load_state_dict(torch.load("model3.pth"))
 for i in range(100):
-    train(i)
-
-# 测试
-total = 0
-correct = 0
-pbar = tqdm.tqdm(enumerate(dataloader), total=len(dataloader))  # 进度条
-for i, (x, y, len_x, len_y) in pbar:
-    x = x[0].tolist()
-    x = [dic.rev_dic[i] for i in x]
-    x = "".join(x)
-    a, b = x.split("+")
-    b, c = b.split("=")
-    total += 1
-    correct += 1 if test(a, b) else 0
-    pbar.set_description("acc: %.4f" % (correct / total))  # 更新进度条
-print(correct / total)
+    # train(i, "model3.pth")
+    test()

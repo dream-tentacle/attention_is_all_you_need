@@ -19,7 +19,7 @@ def attention(K, Q, V, mask=None):
 
 
 class MultiheadAttention(nn.Module):
-    def __init__(self, d_model, head, dropout=0.1) -> None:
+    def __init__(self, d_model, head, dropout=0.5) -> None:
         super().__init__()
         self.linears = clone(nn.Linear(d_model, d_model, bias=False), 4)
         self.head = head
